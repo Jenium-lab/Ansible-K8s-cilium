@@ -1,0 +1,36 @@
+---
+- name: Check whether Kubernetes is already initialized
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: kubeadm_initialized
+
+- name: Initialize Kubernetes Control Plane
+  ansible.builtin.command:
+    cmd: >-
+      kubeadm init
+      --kubernetes-version=v{{ kubernetes_package_version }}
+      --pod-network-cidr={{ pod_network_cidr }}
+  when: not kubeadm_initialized.stat.exists
+
+- name: Create kubeconfig directory
+  ansible.builtin.file:
+    path: "{{ ansible_facts['user_dir'] }}/.kube"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+
+- name: Copy admin kubeconfig
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: "{{ ansible_facts['user_dir'] }}/.kube/config"
+    remote_src: true
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0600"
+
+- name: Generate kubeadm join command
+  ansible.builtin.command:
+    cmd: kubeadm token create --print-join-command
+  register: kubeadm_join_command
+  changed_when: false

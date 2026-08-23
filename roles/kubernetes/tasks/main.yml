@@ -1,0 +1,79 @@
+---
+- name: Create APT keyrings directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install packages required for Kubernetes repository
+  ansible.builtin.apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gpg
+    state: present
+    update_cache: true
+
+
+- name: Download Kubernetes repository signing key
+  ansible.builtin.get_url:
+    url: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key"
+    dest: /etc/apt/keyrings/kubernetes-release.key
+    owner: root
+    group: root
+    mode: "0644"
+
+
+
+
+
+- name: Convert Kubernetes repository key to GPG keyring
+  ansible.builtin.command:
+    cmd: >
+      gpg --dearmor
+      --yes
+      --output /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+      /etc/apt/keyrings/kubernetes-release.key
+  args:
+    creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+
+
+- name: Configure Kubernetes APT repository
+  ansible.builtin.deb822_repository:
+    name: kubernetes
+    types: deb
+    uris: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/"
+    suites: "/"
+    signed_by: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    state: present
+
+
+
+
+- name: Install Kubernetes packages
+  ansible.builtin.apt:
+    name:
+      - "kubelet={{ kubernetes_package_version }}-*"
+      - "kubeadm={{ kubernetes_package_version }}-*"
+      - "kubectl={{ kubernetes_package_version }}-*"
+    state: present
+    update_cache: true
+
+- name: Hold Kubernetes packages
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop:
+    - kubelet
+    - kubeadm
+    - kubectl
+
+- name: Enable and start kubelet
+  ansible.builtin.systemd:
+    name: kubelet
+    enabled: true
+    state: started

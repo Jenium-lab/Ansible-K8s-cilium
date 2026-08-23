@@ -1,0 +1,33 @@
+---
+- name: Get Kubernetes nodes
+  ansible.builtin.command:
+    cmd: kubectl get nodes --no-headers
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: kubernetes_nodes
+  changed_when: false
+
+- name: Display Kubernetes nodes
+  ansible.builtin.debug:
+    var: kubernetes_nodes.stdout_lines
+
+- name: Verify all Kubernetes nodes are Ready
+  ansible.builtin.command:
+    cmd: kubectl get nodes --no-headers
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: node_status
+  changed_when: false
+  failed_when: "'NotReady' in node_status.stdout"
+
+- name: Check Cilium status
+  ansible.builtin.command:
+    cmd: cilium status
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: cilium_status
+  changed_when: false
+
+- name: Display Cilium status
+  ansible.builtin.debug:
+    var: cilium_status.stdout_lines

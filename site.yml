@@ -1,0 +1,44 @@
+---
+- name: Test Kubernetes nodes
+  hosts: k8s_cluster
+  become: true 
+  roles:
+    - common
+    - containerd
+    - kubernetes
+
+
+
+  tasks:
+    - name: Gather system information
+      ansible.builtin.setup:
+        
+    - name: Display hostname
+      ansible.builtin.debug:
+        msg: "Hostname: {{ ansible_facts['hostname'] }}"
+
+    - name: Display OS information
+      ansible.builtin.debug:
+        msg: "OS: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}"
+
+
+- name: Initialize Kubernetes Control Plane
+  hosts: control_plane
+  become: true
+  roles:
+    - control_plane
+
+- name: Install Cilium CNI
+  hosts: control_plane
+  become: true
+
+  roles:
+    - network
+
+- name: Join Kubernetes worker nodes
+  hosts: workers
+  become: true
+
+  roles:
+    - workers
+
