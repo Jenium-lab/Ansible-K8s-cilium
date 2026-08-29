@@ -1,4 +1,7 @@
 ---
+# ============================================================
+# Kubernetes APT repository prerequisites
+# ============================================================
 - name: Create APT keyrings directory
   ansible.builtin.file:
     path: /etc/apt/keyrings
@@ -10,7 +13,6 @@
 - name: Install packages required for Kubernetes repository
   ansible.builtin.apt:
     name:
-      - apt-transport-https
       - ca-certificates
       - curl
       - gpg
@@ -18,6 +20,9 @@
     update_cache: true
 
 
+# ============================================================
+# Kubernetes repository signing key
+# ============================================================
 - name: Download Kubernetes repository signing key
   ansible.builtin.get_url:
     url: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key"
@@ -25,10 +30,6 @@
     owner: root
     group: root
     mode: "0644"
-
-
-
-
 
 - name: Convert Kubernetes repository key to GPG keyring
   ansible.builtin.command:
@@ -41,7 +42,9 @@
     creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 
 
-
+# ============================================================
+# Kubernetes APT repository
+# ============================================================
 - name: Configure Kubernetes APT repository
   ansible.builtin.deb822_repository:
     name: kubernetes
@@ -52,8 +55,9 @@
     state: present
 
 
-
-
+# ============================================================
+# Install Kubernetes
+# ============================================================
 - name: Install Kubernetes packages
   ansible.builtin.apt:
     name:
@@ -63,6 +67,10 @@
     state: present
     update_cache: true
 
+
+# ============================================================
+# Prevent automatic Kubernetes upgrades
+# ============================================================
 - name: Hold Kubernetes packages
   ansible.builtin.dpkg_selections:
     name: "{{ item }}"
@@ -72,6 +80,10 @@
     - kubeadm
     - kubectl
 
+
+# ============================================================
+# Enable and start kubelet
+# ============================================================
 - name: Enable and start kubelet
   ansible.builtin.systemd:
     name: kubelet

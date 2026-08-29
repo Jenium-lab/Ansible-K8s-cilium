@@ -4,7 +4,7 @@
     update_cache: true
     cache_valid_time: 3600
 
-- name: Install required packages
+- name: Install required system packages
   ansible.builtin.apt:
     name:
       - apt-transport-https
@@ -13,6 +13,8 @@
       - gnupg
       - lsb-release
       - software-properties-common
+      - apt-utils
+      - jq
     state: present
 
 - name: Check whether swap is enabled
@@ -21,7 +23,7 @@
   register: swap_status
   changed_when: false
 
-- name: Disable swap if enabled
+- name: Disable swap
   ansible.builtin.command:
     cmd: swapoff -a
   when: swap_status.stdout != ""
@@ -32,30 +34,28 @@
     regexp: '^\s*([^#]\S+\s+\S+\s+swap\s+.*)$'
     replace: '# \1'
 
-
 - name: Load required kernel modules
   ansible.builtin.modprobe:
-    name: "{{item}}"
+    name: "{{ item }}"
     state: present
   loop:
     - overlay
     - br_netfilter
-  
+
 - name: Configure Kubernetes kernel modules
   ansible.builtin.template:
     src: kubernetes.conf.j2
     dest: /etc/modules-load.d/kubernetes.conf
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
 
-- name: Configure kubernetes sysctl settings
+- name: Configure Kubernetes sysctl settings
   ansible.builtin.template:
     src: 99-kubernetes.conf.j2
     dest: /etc/sysctl.d/99-kubernetes.conf
     owner: root
     group: root
-    mode: '0644'
+    mode: "0644"
   notify:
     - Reload sysctl
-    

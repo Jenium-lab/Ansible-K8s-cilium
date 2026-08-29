@@ -6,7 +6,10 @@ kubernetes_package_version: "1.34.11"
 # Kubernetes networking
 pod_network_cidr: "10.244.0.0/16"
 
+# Kubernetes API HA endpoint
+# Used when there is more than one control-plane node.
+control_plane_endpoint: "192.168.10.200:6443"
+
 # Cilium
 cilium_cli_version: "latest"
 cilium_hubble_enabled: true
-cilium_hubble_relay_enabled: true

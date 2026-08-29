@@ -1,0 +1,37 @@
+global
+    log /dev/log local0
+    log /dev/log local1 notice
+    daemon
+
+    maxconn 2048
+
+
+defaults
+    log global
+    mode tcp
+
+    timeout connect 5s
+    timeout client  30s
+    timeout server  30s
+
+
+# ============================================================
+# Kubernetes API frontend
+# ============================================================
+frontend kubernetes-api
+    bind {{ control_plane_endpoint }}
+    mode tcp
+
+    default_backend kubernetes-api-backend
+
+
+# ============================================================
+# Kubernetes API backend
+# Automatically creates one backend per control-plane node
+# ============================================================
+backend kubernetes-api-backend
+    mode tcp
+
+{% for cp in groups['control_plane'] %}
+    server {{ hostvars[cp]['inventory_hostname'] }} {{ hostvars[cp]['ansible_host'] }}:6443 check
+{% endfor %}

@@ -1,0 +1,34 @@
+---
+# ============================================================
+# Install HAProxy
+# ============================================================
+- name: Install HAProxy
+  ansible.builtin.apt:
+    name: haproxy
+    state: present
+    update_cache: true
+
+
+# ============================================================
+# Configure HAProxy
+# Only control-plane nodes run HAProxy.
+# ============================================================
+- name: Configure HAProxy
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Restart HAProxy
+
+
+# ============================================================
+# Enable HAProxy
+# ============================================================
+- name: Enable and start HAProxy
+  ansible.builtin.systemd:
+    name: haproxy
+    state: stopped
+    enabled: true

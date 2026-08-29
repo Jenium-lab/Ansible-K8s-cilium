@@ -9,17 +9,20 @@
 - name: Install Cilium CLI
   ansible.builtin.shell:
     cmd: |
-      CILIUM_CLI_VERSION=$(curl -s https://raw.githubusercontent.com/cilium/cilium-cli/main/stable.txt)
-      CLI_ARCH=amd64
-      CLI_BASE=https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}
+      set -e
 
-      curl -L --fail \
+      CILIUM_CLI_VERSION=$(curl -fsSL https://raw.githubusercontent.com/cilium/cilium-cli/main/stable.txt)
+      CLI_ARCH=amd64
+      CLI_BASE="https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}"
+
+      curl -fsSL \
         "${CLI_BASE}/cilium-linux-${CLI_ARCH}.tar.gz" \
         -o /tmp/cilium.tar.gz
 
       tar -xzf /tmp/cilium.tar.gz -C /usr/local/bin
       rm -f /tmp/cilium.tar.gz
-  when: cilium_cli_check.rc != 0
+  when:
+    - cilium_cli_check.rc != 0
 
 - name: Check whether Cilium is already installed
   ansible.builtin.command:
@@ -30,34 +33,35 @@
   failed_when: false
   changed_when: false
 
-- name: Install Cilium into Kubernetes
+- name: Install Cilium
   ansible.builtin.command:
-    cmd: cilium install
+    cmd: >-
+      cilium install
+      --set ipam.operator.clusterPoolIPv4PodCIDRList={{ pod_network_cidr }}
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
-  when: cilium_status.rc != 0
-  register: cilium_install
+  when:
+    - cilium_status.rc != 0
 
-- name: Wait for Cilium to become ready
+- name: Wait for Cilium
   ansible.builtin.command:
     cmd: cilium status --wait
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   changed_when: false
 
-
-
-
-- name: Check if Hubble Relay is enabled
+- name: Check whether Hubble Relay exists
   ansible.builtin.command:
     cmd: kubectl get deployment hubble-relay -n kube-system
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   register: hubble_relay
-  changed_when: false
   failed_when: false
+  changed_when: false
+  when:
+    - cilium_hubble_enabled | bool
 
-- name: Enable Hubble observability
+- name: Enable Hubble
   ansible.builtin.command:
     cmd: cilium hubble enable
   environment:
@@ -68,8 +72,12 @@
 
 - name: Wait for Hubble Relay
   ansible.builtin.command:
-    cmd: kubectl rollout status deployment/hubble-relay -n kube-system --timeout=180s
+    cmd: >-
+      kubectl rollout status deployment/hubble-relay
+      -n kube-system
+      --timeout=180s
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   changed_when: false
-  when: cilium_hubble_enabled | bool
+  when:
+    - cilium_hubble_enabled | bool

@@ -1,36 +1,159 @@
 ---
+# ============================================================
+# 1. Check whether this node is already a control plane
+# ============================================================
 - name: Check whether Kubernetes is already initialized
   ansible.builtin.stat:
     path: /etc/kubernetes/admin.conf
   register: kubeadm_initialized
 
-- name: Initialize Kubernetes Control Plane
+
+# ============================================================
+# 2. Initialize FIRST control plane
+# ============================================================
+- name: Initialize first control plane
   ansible.builtin.command:
     cmd: >-
       kubeadm init
       --kubernetes-version=v{{ kubernetes_package_version }}
       --pod-network-cidr={{ pod_network_cidr }}
-  when: not kubeadm_initialized.stat.exists
+      {% if groups['control_plane'] | length > 1 %}
+      --control-plane-endpoint={{ control_plane_endpoint }}
+      {% endif %}
+  when:
+    - inventory_hostname == groups['control_plane'][0]
+    - not kubeadm_initialized.stat.exists
+  register: kubeadm_init
 
-- name: Create kubeconfig directory
+# ============================================================
+# 3. Configure kubeconfig on FIRST control plane
+# ============================================================
+- name: Create kubeconfig directory on first control plane
   ansible.builtin.file:
-    path: "{{ ansible_facts['user_dir'] }}/.kube"
+    path: /root/.kube
     state: directory
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
-    mode: "0755"
+    owner: root
+    group: root
+    mode: "0700"
+  when:
+    - inventory_hostname == groups['control_plane'][0]
 
-- name: Copy admin kubeconfig
+- name: Copy admin kubeconfig to first control plane
   ansible.builtin.copy:
     src: /etc/kubernetes/admin.conf
-    dest: "{{ ansible_facts['user_dir'] }}/.kube/config"
+    dest: /root/.kube/config
     remote_src: true
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
+    owner: root
+    group: root
     mode: "0600"
+  when:
+    - inventory_hostname == groups['control_plane'][0]
 
-- name: Generate kubeadm join command
+
+# ============================================================
+# 4. Generate WORKER join command
+# ============================================================
+- name: Generate worker join command
   ansible.builtin.command:
     cmd: kubeadm token create --print-join-command
   register: kubeadm_join_command
   changed_when: false
+  when:
+    - inventory_hostname == groups['control_plane'][0]
+
+
+# ============================================================
+# 5. Prepare certificates for MULTIPLE control planes
+# ============================================================
+- name: Upload control-plane certificates
+  ansible.builtin.command:
+    cmd: kubeadm init phase upload-certs --upload-certs
+  register: kubeadm_upload_certificates
+  changed_when: false
+  when:
+    - inventory_hostname == groups['control_plane'][0]
+    - groups['control_plane'] | length > 1
+
+- name: Extract control-plane certificate key
+  ansible.builtin.set_fact:
+    control_plane_certificate_key: "{{ kubeadm_upload_certificates.stdout_lines[-1] }}"
+  when:
+    - inventory_hostname == groups['control_plane'][0]
+    - groups['control_plane'] | length > 1
+
+
+# ============================================================
+# 6. Create CONTROL-PLANE join command
+# ============================================================
+- name: Create control-plane join command
+  ansible.builtin.set_fact:
+    control_plane_join_command: >-
+      {{ kubeadm_join_command.stdout }}
+      --control-plane
+      --certificate-key {{ control_plane_certificate_key }}
+  when:
+    - inventory_hostname == groups['control_plane'][0]
+    - groups['control_plane'] | length > 1
+
+
+# ============================================================
+# 7. Join additional control planes
+# ============================================================
+- name: Join additional control plane
+  ansible.builtin.command:
+    cmd: "{{ hostvars[groups['control_plane'][0]].control_plane_join_command }}"
+  when:
+    - groups['control_plane'] | length > 1
+    - inventory_hostname != groups['control_plane'][0]
+    - not kubeadm_initialized.stat.exists
+
+
+# ============================================================
+# 8. Configure kubeconfig on additional control planes
+# ============================================================
+- name: Create kubeconfig directory on additional control plane
+  ansible.builtin.file:
+    path: /root/.kube
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when:
+    - groups['control_plane'] | length > 1
+    - inventory_hostname != groups['control_plane'][0]
+    - kubeadm_initialized.stat.exists
+
+- name: Copy admin kubeconfig to additional control plane
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /root/.kube/config
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+  when:
+    - groups['control_plane'] | length > 1
+    - inventory_hostname != groups['control_plane'][0]
+    - kubeadm_initialized.stat.exists
+
+
+# ============================================================
+# 9. Single control-plane special case
+# ============================================================
+# Allow workloads to run on the only control-plane node.
+# This is NOT done when multiple control planes exist.
+- name: Allow workloads on single control-plane node
+  ansible.builtin.command:
+    cmd: >-
+      kubectl taint nodes {{ ansible_hostname }}
+      node-role.kubernetes.io/control-plane:NoSchedule-
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  register: remove_control_plane_taint
+  failed_when:
+    - remove_control_plane_taint.rc != 0
+    - "'taint' not in remove_control_plane_taint.stderr"
+  changed_when: remove_control_plane_taint.rc == 0
+  when:
+    - groups['control_plane'] | length == 1
+    - inventory_hostname == groups['control_plane'][0]

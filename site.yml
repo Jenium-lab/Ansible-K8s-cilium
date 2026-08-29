@@ -1,44 +1,57 @@
 ---
-- name: Test Kubernetes nodes
+# ============================================================
+# 1. Prepare all Kubernetes nodes
+# ============================================================
+- name: Prepare Kubernetes nodes
   hosts: k8s_cluster
-  become: true 
+  become: true
+
   roles:
     - common
     - containerd
     - kubernetes
 
 
-
-  tasks:
-    - name: Gather system information
-      ansible.builtin.setup:
-        
-    - name: Display hostname
-      ansible.builtin.debug:
-        msg: "Hostname: {{ ansible_facts['hostname'] }}"
-
-    - name: Display OS information
-      ansible.builtin.debug:
-        msg: "OS: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}"
-
-
-- name: Initialize Kubernetes Control Plane
+# ============================================================
+# 2. Configure Kubernetes API HA
+# ============================================================
+- name: Configure Kubernetes API load balancer
   hosts: control_plane
   become: true
+
+  roles:
+    - haproxy
+    - keepalived
+
+
+# ============================================================
+# 3. Initialize / configure control plane
+# ============================================================
+- name: Configure Kubernetes control plane
+  hosts: control_plane
+  become: true
+
   roles:
     - control_plane
 
+
+# ============================================================
+# 4. Install Cilium CNI
+# ============================================================
 - name: Install Cilium CNI
-  hosts: control_plane
+  hosts: control_plane[0]
   become: true
 
   roles:
     - network
 
+
+# ============================================================
+# 5. Join Kubernetes worker nodes
+# ============================================================
 - name: Join Kubernetes worker nodes
   hosts: workers
   become: true
 
   roles:
     - workers
-
